@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 st.set_page_config(page_title="EY | Kinetic Stress Model", layout="wide", initial_sidebar_state="expanded")
 
 # Custom EY Branded Title
-st.markdown("<h1 style='color: #FFE600;'>EY | Geopolitical Kinetic-to-Financial Stress Model</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='color: #FFE600;'>EY | Middle East Conflict X Banking Stress Model</h1>", unsafe_allow_html=True)
 st.markdown("*A Structural Capital Depletion Framework for Global Systemically Important Banks (G-SIBs)*")
 st.markdown("---")
 
