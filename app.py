@@ -1,115 +1,122 @@
 import streamlit as st
-import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="Geopolitical Banking Stress Model", layout="wide")
+st.set_page_config(page_title="Structural Capital Stress Test", layout="wide")
 
-# --- MODEL ASSUMPTIONS & BASELINE DATA (Hypothetical 2026 baseline) ---
-# Beta coefficients for the logistic regression (calibrated to historical crises)
-BETA_0 = -4.5   # Intercept (Low base probability)
-BETA_1 = 0.85   # Credit Quality weight
-BETA_2 = 0.70   # Liquidity weight
-BETA_3 = 1.10   # Market Risk weight (Highly sensitive to rate shocks)
-BETA_4 = 0.60   # Sovereign Stress weight
-BETA_5 = 0.95   # Contagion weight
-
-st.title("🏛️ Banking Valuation Vulnerability Model")
-st.subheader("Impact of Middle East Geopolitical Conflict on Global Banking Solvency")
-
+st.title("🏦 Structural Bank Capital Stress Test Model")
 st.markdown("""
-*This dynamic model calculates the probability of severe banking valuation collapse (P/TBV < 0.4x) based on macroeconomic shocks triggered by regional conflict.*
+**Methodology:** This model utilizes a CCAR-aligned Structural Capital Depletion framework. 
+Unlike aggregate probability scores, this dashboard calculates explicit, auditable dollar-value losses across four macroeconomic risk pillars to determine the stressed Common Equity Tier 1 (CET1) ratio.
 """)
 
-# --- SIDEBAR: DYNAMIC PARAMETER CUSTOMIZATION ---
-st.sidebar.header("Geopolitical Shock Parameters")
+# --- BASELINE BANK BALANCE SHEET (Fictionalized G-SIB Proxy) ---
+# In a production environment, these would be pulled via API from SEC filings or CapIQ
+STARTING_CET1_CAPITAL = 200.0  # $ Billions
+RWA = 1666.0                   # Risk-Weighted Assets in $ Billions
+BASELINE_CET1_RATIO = (STARTING_CET1_CAPITAL / RWA) * 100
 
-conflict_severity = st.sidebar.slider("Conflict Severity Index (1=Low, 10=Severe)", 1, 10, 5)
-oil_shock = st.sidebar.number_input("Brent Crude Price Peak ($/bbl)", min_value=70, max_value=250, value=120)
-rate_shock = st.sidebar.slider("US Treasury Yield Shock (bps)", -100, 300, 150)
-cds_spreads = st.sidebar.slider("MENA Sovereign CDS Spread Average (bps)", 100, 1500, 450)
-interbank_freeze = st.sidebar.slider("Interbank Spread (SOFR-OIS in bps)", 10, 300, 75)
+BOND_PORTFOLIO_SIZE = 500.0    # $ Billions (AFS + HTM)
+PORTFOLIO_DURATION = 5.5       # Modified Duration
 
-# --- CALCULATING THE 5 PILLARS (Z-Scores based on shock severity) ---
-# Normalizing inputs to a 0-10 stress scale for the logistic model
-credit_stress = (oil_shock / 200) * conflict_severity
-liquidity_stress = (interbank_freeze / 300) * 10
-market_risk = (rate_shock / 300) * 10
-sovereign_stress = (cds_spreads / 1500) * 10
-contagion_risk = (interbank_freeze / 300) * conflict_severity
+LOAN_BOOK_SIZE = 1000.0        # $ Billions
+BASE_PD = 0.020                # Base Probability of Default (2.0%)
+LGD = 0.40                     # Loss Given Default (40%)
 
-# --- PROBABILITY CALCULATION (Logistic Link Function) ---
-log_odds = (BETA_0 + 
-            (BETA_1 * credit_stress) + 
-            (BETA_2 * liquidity_stress) + 
-            (BETA_3 * market_risk) + 
-            (BETA_4 * sovereign_stress) + 
-            (BETA_5 * contagion_risk))
+# --- SIDEBAR: DYNAMIC MACRO SHOCKS ---
+st.sidebar.header("Macroeconomic Shocks")
+st.sidebar.markdown("Adjust the severity of the geopolitical fallout:")
 
-# Prevent overflow
-log_odds = max(min(log_odds, 10), -10)
-prob_collapse = 1 / (1 + np.exp(-log_odds))
+oil_shock = st.sidebar.slider("Brent Crude Peak ($/bbl)", min_value=70, max_value=250, value=120, step=5)
+yield_shock = st.sidebar.slider("Treasury Yield Curve Shock (bps)", min_value=0, max_value=400, value=150, step=10)
+funding_spread = st.sidebar.slider("Wholesale Funding Spread Widening (bps)", min_value=0, max_value=300, value=75, step=5)
+contagion_loss = st.sidebar.slider("Direct Sovereign/Counterparty Write-offs ($B)", min_value=0.0, max_value=30.0, value=2.5, step=0.5)
 
-# --- DASHBOARD VISUALIZATION ---
-col1, col2 = st.columns([1, 2])
+# --- THE MATHEMATICAL ENGINE (Auditable Calculations) ---
 
-with col1:
-    st.markdown("### Probability of Sector Valuation Collapse")
-    # Plotly Gauge Chart
-    fig = go.Figure(go.Indicator(
-        mode = "gauge+number",
-        value = prob_collapse * 100,
-        number = {'suffix': "%", 'valueformat': ".1f"},
-        title = {'text': "Implied Collapse Probability"},
-        gauge = {
-            'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "darkblue"},
-            'bar': {'color': "darkred"},
-            'bgcolor': "white",
-            'borderwidth': 2,
-            'bordercolor': "gray",
-            'steps': [
-                {'range': [0, 15], 'color': "lightgreen"},
-                {'range': [15, 40], 'color': "gold"},
-                {'range': [40, 100], 'color': "salmon"}],
-        }
-    ))
-    fig.update_layout(height=350, margin=dict(l=20, r=20, t=50, b=20))
-    st.plotly_chart(fig, use_container_width=True)
+# 1. Market Risk Loss (Duration Math)
+# Formula: Value * Duration * (Yield Shock in decimal)
+yield_shock_decimal = yield_shock / 10000
+market_loss = BOND_PORTFOLIO_SIZE * PORTFOLIO_DURATION * yield_shock_decimal
 
-with col2:
-    st.markdown("### Risk Pillar Breakdown")
-    # Radar Chart for the 5 Pillars
-    categories = ['Credit Quality', 'Liquidity Stress', 'Market Risk', 'Sovereign Stress', 'Contagion Risk']
-    
-    fig_radar = go.Figure()
-    fig_radar.add_trace(go.Scatterpolar(
-        r=[credit_stress, liquidity_stress, market_risk, sovereign_stress, contagion_risk],
-        theta=categories,
-        fill='toself',
-        name='Current Stress Level',
-        line_color='darkred'
-    ))
-    fig_radar.update_layout(
-        polar=dict(radialaxis=dict(visible=True, range=[0, 10])),
-        showlegend=False,
-        height=350, margin=dict(l=40, r=40, t=40, b=40)
-    )
-    st.plotly_chart(fig_radar, use_container_width=True)
+# 2. Credit Risk Loss (Expected Loss Math)
+# Stressed PD scales with oil prices (inflation/margin crush) and rate shocks (debt servicing costs)
+pd_multiplier = 1 + ((oil_shock - 70) / 100) + (yield_shock / 200)
+stressed_pd = BASE_PD * pd_multiplier
+credit_loss = LOAN_BOOK_SIZE * stressed_pd * LGD
 
-# --- IMPACT SUMMARY TABLE ---
+# 3. Funding & Liquidity Cost
+# Simplified sensitivity: Every 10 bps of spread widening costs $0.5B in Net Interest Income
+funding_loss = (funding_spread / 10) * 0.5
+
+# 4. Total Capital Depletion
+total_depletion = market_loss + credit_loss + funding_loss + contagion_loss
+stressed_capital = STARTING_CET1_CAPITAL - total_depletion
+stressed_cet1_ratio = (stressed_capital / RWA) * 100
+
+# Probability of Breach (Logistic decay mapping CET1 proximity to the 4.5% regulatory minimum)
+# If CET1 falls to 4.5%, probability approaches 99%. If it stays above 9%, probability is negligible.
+distance_to_default = stressed_cet1_ratio - 4.5
+if distance_to_default <= 0:
+    prob_collapse = 99.9
+else:
+    prob_collapse = max(0, 100 - (distance_to_default * 20)) # Linear scaling for simplicity in UI
+
+# --- UI: TOP LEVEL METRICS ---
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("Baseline CET1 Ratio", f"{BASELINE_CET1_RATIO:.1f}%")
+col2.metric("Stressed CET1 Ratio", f"{stressed_cet1_ratio:.1f}%", f"{stressed_cet1_ratio - BASELINE_CET1_RATIO:.1f}%", delta_color="inverse")
+col3.metric("Total Capital Destroyed", f"${total_depletion:.1f}B")
+col4.metric("Prob. of Regulatory Breach", f"{prob_collapse:.1f}%", delta_color="inverse" if prob_collapse > 20 else "normal")
+
 st.markdown("---")
-st.markdown("### Estimated Macro-Financial Impact Matrix")
-impact_data = {
-    "Risk Pillar": ["Credit Quality", "Liquidity", "Market Risk", "Sovereign Risk", "Contagion"],
-    "Proxy Metric": ["NPL Ratio Spikes", "LCR Degradation", "HTM Portfolio Losses", "CDS Widening", "Interbank Rate Spikes"],
-    "Estimated Impact Severity": [
-        "High" if credit_stress > 6 else "Medium",
-        "High" if liquidity_stress > 6 else "Medium",
-        "Critical" if market_risk > 8 else "High",
-        "Severe" if sovereign_stress > 7 else "Low",
-        "High" if contagion_risk > 6 else "Moderate"
-    ]
-}
-df_impact = pd.DataFrame(impact_data)
-st.table(df_impact)
+
+# --- UI: WATERFALL CHART (Visualizing the Depletion) ---
+st.subheader("Capital Depletion Waterfall")
+
+fig = go.Figure(go.Waterfall(
+    name = "Capital Stress", orientation = "v",
+    measure = ["absolute", "relative", "relative", "relative", "relative", "total"],
+    x = ["Starting Capital", "Market Risk (Bonds)", "Credit Risk (Loans)", "Funding Costs", "Contagion", "Stressed Capital"],
+    textposition = "outside",
+    text = [f"${STARTING_CET1_CAPITAL}B", f"-${market_loss:.1f}B", f"-${credit_loss:.1f}B", f"-${funding_loss:.1f}B", f"-${contagion_loss:.1f}B", f"${stressed_capital:.1f}B"],
+    y = [STARTING_CET1_CAPITAL, -market_loss, -credit_loss, -funding_loss, -contagion_loss, stressed_capital],
+    connector = {"line":{"color":"rgb(63, 63, 63)"}},
+    decreasing = {"marker":{"color":"#ef553b"}},
+    totals = {"marker":{"color":"#00cc96"}}
+))
+
+fig.update_layout(
+    title = "Bridge from Baseline to Stressed Tier 1 Capital (USD Billions)",
+    showlegend = False,
+    height = 500,
+    margin=dict(l=20, r=20, t=50, b=20)
+)
+st.plotly_chart(fig, use_container_width=True)
+
+# --- UI: TRANSPARENCY & AUDIT TRAIL ---
+st.markdown("---")
+st.subheader("Model Audit Trail: How the numbers are calculated")
+
+with st.expander("Click to view underlying mathematical formulas and component values"):
+    st.markdown(f"""
+    **1. Market Risk (Bond Portfolio)**
+    * **Logic:** Calculates mark-to-market losses on fixed-income securities due to rate hikes.
+    * **Formula:** `Portfolio Size ($500B) * Modified Duration (5.5) * Yield Shock ({yield_shock} bps)`
+    * **Result:** **${market_loss:.1f}B** reduction in equity.
+    
+    **2. Credit Risk (Loan Book)**
+    * **Logic:** Calculates Expected Loss (EL) expansion as borrower margins compress from oil prices and rate hikes.
+    * **Formula:** `Loan Book ($1000B) * Stressed PD ({stressed_pd*100:.2f}%) * LGD (40%)`
+    * *(Note: Base PD is 2.0%. The shock multiplier is currently {pd_multiplier:.2f}x)*
+    * **Result:** **${credit_loss:.1f}B** in credit write-offs.
+    
+    **3. Funding & Liquidity**
+    * **Logic:** Estimates Net Interest Margin compression from interbank borrowing spreads.
+    * **Formula:** `${0.5}B cost for every 10 bps of spread widening ({funding_spread} bps)`
+    * **Result:** **${funding_loss:.1f}B** loss.
+    
+    **4. Stressed Capital Ratio**
+    * **Formula:** `(Starting Capital (${STARTING_CET1_CAPITAL}B) - Total Losses (${total_depletion:.1f}B)) / RWA (${RWA}B)`
+    """)
