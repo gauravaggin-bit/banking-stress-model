@@ -11,16 +11,15 @@ st.markdown("""
 Unlike aggregate probability scores, this dashboard calculates explicit, auditable dollar-value losses across four macroeconomic risk pillars to determine the stressed Common Equity Tier 1 (CET1) ratio.
 """)
 
-# --- BASELINE BANK BALANCE SHEET (Fictionalized G-SIB Proxy) ---
-# In a production environment, these would be pulled via API from SEC filings or CapIQ
-STARTING_CET1_CAPITAL = 200.0  # $ Billions
-RWA = 1666.0                   # Risk-Weighted Assets in $ Billions
+# --- BASELINE BANK BALANCE SHEET (MNC / G-SIB Proxy) ---
+STARTING_CET1_CAPITAL = 250.0  # $ Billions (Scaled up to top-tier MNC)
+RWA = 2000.0                   # Risk-Weighted Assets in $ Billions
 BASELINE_CET1_RATIO = (STARTING_CET1_CAPITAL / RWA) * 100
 
-BOND_PORTFOLIO_SIZE = 500.0    # $ Billions (AFS + HTM)
+BOND_PORTFOLIO_SIZE = 600.0    # $ Billions (AFS + HTM)
 PORTFOLIO_DURATION = 5.5       # Modified Duration
 
-LOAN_BOOK_SIZE = 1000.0        # $ Billions
+LOAN_BOOK_SIZE = 1300.0        # $ Billions
 BASE_PD = 0.020                # Base Probability of Default (2.0%)
 LGD = 0.40                     # Loss Given Default (40%)
 
