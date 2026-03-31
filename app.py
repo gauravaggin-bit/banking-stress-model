@@ -3,40 +3,43 @@ import pandas as pd
 import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="EY | Kinetic Stress Model", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="EY | Global Kinetic Stress Model", layout="wide", initial_sidebar_state="expanded")
 
 # Custom EY Branded Title
-st.markdown("<h1 style='color: #FFE600;'>EY | Middle East Conflict X Banking Stress Model</h1>", unsafe_allow_html=True)
-st.markdown("*A Structural Capital Depletion Framework for Global Systemically Important Banks (G-SIBs)*")
+st.markdown("<h1 style='color: #FFE600;'>EY | Basel III Kinetic-to-Financial Stress Model</h1>", unsafe_allow_html=True)
+st.markdown("*Global Systemically Important Bank (G-SIB) Structural Stress Framework*")
 st.markdown("---")
 
-# --- BASELINE BANK BALANCE SHEET (MNC / G-SIB Proxy) ---
-STARTING_CET1_CAPITAL = 250.0  
-RWA = 2000.0                   
-BASELINE_CET1_RATIO = (STARTING_CET1_CAPITAL / RWA) * 100
+# --- SIDEBAR: GEOPOLITICAL & CAPITAL INPUTS ---
+st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/thumb/3/34/EY_logo_2019.svg/512px-EY_logo_2019.svg.png", width=100)
+st.sidebar.markdown("<h2 style='color: #FFE600;'>Model Parameters</h2>", unsafe_allow_html=True)
 
-BOND_PORTFOLIO_SIZE = 600.0    
+# NEW: Starting Capital Slider
+starting_capital = st.sidebar.slider("Starting CET1 Capital ($B)", min_value=10, max_value=500, value=250, step=10)
+
+# Geopolitical Inputs
+st.sidebar.markdown("---")
+severity = st.sidebar.slider("Conflict Severity (1-10)", min_value=1, max_value=10, value=5, step=1)
+duration_months = st.sidebar.slider("Conflict Duration (Months)", min_value=1, max_value=36, value=12, step=1)
+duration_years = duration_months / 12.0
+
+# --- BASELINE BANK BALANCE SHEET (Scaled to Capital) ---
+# We maintain a realistic 12.5% Starting CET1 Ratio by scaling RWA to the selected Capital
+RWA = starting_capital / 0.125                   
+BASELINE_CET1_RATIO = 12.5
+
+# Proportional Assets
+BOND_PORTFOLIO_SIZE = starting_capital * 2.4   
 PORTFOLIO_DURATION = 5.5       
-
-LOAN_BOOK_SIZE = 1300.0        
+LOAN_BOOK_SIZE = starting_capital * 5.2        
 BASE_PD = 0.020                
 LGD = 0.40                     
-
-# --- SIDEBAR: GEOPOLITICAL INPUTS ---
-st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/thumb/3/34/EY_logo_2019.svg/512px-EY_logo_2019.svg.png", width=100)
-st.sidebar.markdown("<h2 style='color: #FFE600;'>Geopolitical Scenario</h2>", unsafe_allow_html=True)
-st.sidebar.markdown("Define the parameters of the conflict. These variables apply globally across all tabs.")
-
-severity = st.sidebar.slider("Conflict Severity (1 = Skirmish, 10 = Total Regional War)", min_value=1, max_value=10, value=5, step=1)
-duration_months = st.sidebar.slider("Conflict Duration (Months)", min_value=1, max_value=36, value=12, step=1)
-
-duration_years = duration_months / 12.0
 
 # --- THE KINETIC-TO-MACRO TRANSLATION ENGINE ---
 implied_oil = 75 + (severity * 10) * (1 + 0.4 * duration_years)
 implied_yield_shock = (severity * 15) + (duration_years * 50)
 implied_funding_spread = (severity * 10) + (duration_years * 15)
-contagion_loss = (severity ** 1.4) * 0.6  
+contagion_loss = (severity ** 1.4) * (starting_capital / 100) # Scaled to bank size
 
 # --- THE FINANCIAL CAPITAL ENGINE ---
 yield_shock_decimal = implied_yield_shock / 10000
@@ -46,20 +49,23 @@ pd_multiplier = 1 + (((implied_oil - 75) / 100) + (implied_yield_shock / 200)) *
 stressed_pd = BASE_PD * pd_multiplier
 credit_loss = LOAN_BOOK_SIZE * stressed_pd * LGD
 
-funding_loss = (implied_funding_spread / 10) * 0.5
+funding_loss = (implied_funding_spread / 10) * (starting_capital / 500)
 
 total_depletion = market_loss + credit_loss + funding_loss + contagion_loss
-stressed_capital = STARTING_CET1_CAPITAL - total_depletion
+stressed_capital = starting_capital - total_depletion
 stressed_cet1_ratio = (stressed_capital / RWA) * 100
 
-distance_to_default = stressed_cet1_ratio - 4.5
-prob_collapse = 99.9 if distance_to_default <= 0 else max(0, 100 - (distance_to_default * 20))
+# BASEEL III BUFFER LOGIC
+# Min CET1 (4.5%) + CCB (2.5%) + Avg G-SIB Surcharge (2.0%) = 9.0% Total Requirement
+required_cet1 = 9.0
+buffer_headroom = stressed_cet1_ratio - required_cet1
+prob_breach = 99.9 if buffer_headroom <= 0 else max(0, 100 - (buffer_headroom * 25))
 
 # --- CREATE TABS ---
 tab1, tab2, tab3, tab4 = st.tabs([
     "📊 Dynamic Dashboard", 
     "🧮 Parameter Definitions", 
-    "🏛️ Methodology", 
+    "🏛️ Methodology (Basel III)", 
     "💡 Client Use Cases"
 ])
 
@@ -78,19 +84,19 @@ with tab1:
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Baseline CET1 Ratio", f"{BASELINE_CET1_RATIO:.1f}%")
     col2.metric("Stressed CET1 Ratio", f"{stressed_cet1_ratio:.1f}%", f"{stressed_cet1_ratio - BASELINE_CET1_RATIO:.1f}%", delta_color="inverse")
-    col3.metric("Total Capital Destroyed", f"${total_depletion:.1f}B")
-    col4.metric("Prob. of Regulatory Breach", f"{prob_collapse:.1f}%", delta_color="inverse" if prob_collapse > 20 else "normal")
+    col3.metric("Capital Depleted", f"${total_depletion:.1f}B")
+    col4.metric("Basel III Buffer Breach Prob.", f"{prob_breach:.1f}%", delta_color="inverse" if prob_breach > 20 else "normal")
 
     st.markdown("---")
-    st.subheader("Capital Depletion Waterfall")
+    st.subheader("Basel III Capital Depletion Waterfall")
 
     fig = go.Figure(go.Waterfall(
         name = "Capital Stress", orientation = "v",
         measure = ["absolute", "relative", "relative", "relative", "relative", "total"],
         x = ["Starting Capital", "Market Risk", "Credit Risk", "Funding Costs", "Contagion", "Stressed Capital"],
         textposition = "outside",
-        text = [f"${STARTING_CET1_CAPITAL}B", f"-${market_loss:.1f}B", f"-${credit_loss:.1f}B", f"-${funding_loss:.1f}B", f"-${contagion_loss:.1f}B", f"${stressed_capital:.1f}B"],
-        y = [STARTING_CET1_CAPITAL, -market_loss, -credit_loss, -funding_loss, -contagion_loss, stressed_capital],
+        text = [f"${starting_capital}B", f"-${market_loss:.1f}B", f"-${credit_loss:.1f}B", f"-${funding_loss:.1f}B", f"-${contagion_loss:.1f}B", f"${stressed_capital:.1f}B"],
+        y = [starting_capital, -market_loss, -credit_loss, -funding_loss, -contagion_loss, stressed_capital],
         connector = {"line":{"color":"#555555"}},
         decreasing = {"marker":{"color":"#FF4136"}}, 
         totals = {"marker":{"color":"#FFE600"}},     
@@ -101,7 +107,7 @@ with tab1:
         template="plotly_dark",
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
-        title = f"Capital Bridge: Severity {severity} | Duration {duration_months} Months",
+        title = f"G-SIB Capital Bridge: ${starting_capital}B Starting Base",
         showlegend = False,
         height = 500,
         margin=dict(l=20, r=20, t=50, b=20),
@@ -113,69 +119,55 @@ with tab1:
 # TAB 2: PARAMETER DEFINITIONS
 # ==========================================
 with tab2:
-    st.subheader("How Parameters Drive Capital Destruction")
-    st.markdown("""
-    This model utilizes a kinetic-to-financial translation matrix. The user defines the geopolitical reality, and the engine calculates the balance sheet impact.
+    st.subheader("Defining the Stress Vectors")
+    st.markdown(f"""
+    Gaurav, this model uses your defined conflict parameters to drive capital erosion through the following mechanisms:
     
     #### 1. The Geopolitical Inputs
-    * **Severity (1-10):** Represents the kinetic intensity of the conflict. A higher severity creates immediate panic, drives initial crude oil spikes, and exponentially increases direct sovereign contagion (e.g., regional defaults).
-    * **Duration (Months):** Acts as a non-linear amplifier. A 2-month shock is survivable for corporate borrowers. A 36-month shock permanently alters supply chains, anchors inflation, and forces central banks to hold rates "higher for longer."
+    * **Severity (1-10):** Represents kinetic intensity. This directly influences the magnitude of the oil shock and the 'contagion' haircut applied to regional interbank exposures.
+    * **Duration (Months):** Represents the timeline of the conflict. In the Basel framework, duration is a critical multiplier for credit risk, as corporations can hedge short shocks but fail during protracted crises.
     
     #### 2. The Financial Transmission Channels
-    * **Market Risk (The Duration Trap):** Conflict drives inflation expectations, which spikes bond yields. Because banks hold massive portfolios of fixed-income assets (HTM/AFS), rising yields mathematically crush the value of these bonds. *Risk escalates with both Severity and Duration.*
-    * **Credit Risk (Corporate/Retail Defaults):** High oil prices compress corporate profit margins. Simultaneously, higher interest rates make debt servicing extremely expensive. This combination multiplies the Probability of Default (PD) across the bank's $1.3 Trillion loan book. *Risk is heavily compounded by Duration.*
-    * **Funding & Liquidity:** Geopolitical fear causes wholesale funding markets to freeze. Banks are forced to pay a higher premium (SOFR-OIS spread) to borrow from each other, compressing their Net Interest Margin (NIM).
-    * **Contagion / Sovereign Risk:** Direct exposure to institutions or sovereign debt in the conflict zone. Modeled as a direct, unrecoverable capital write-off that scales exponentially with the Severity index.
+    * **Market Risk:** Reflects the mark-to-market loss on the bank's **${BOND_PORTFOLIO_SIZE:.0f}B** fixed-income portfolio.
+    * **Credit Risk:** Reflects Expected Loss (EL) on the **${LOAN_BOOK_SIZE:.0f}B** loan book. Stressed Probability of Default (PD) is currently **{stressed_pd*100:.2f}%**.
+    * **Contagion:** Reflects the immediate write-off of assets tied to the conflict zone.
     """)
 
 # ==========================================
-# TAB 3: METHODOLOGY
+# TAB 3: METHODOLOGY (Basel III)
 # ==========================================
 with tab3:
-    st.subheader("Structural Capital Depletion Framework")
+    st.subheader("Basel III vs. CCAR: Why we use the Global Standard")
     st.markdown("""
-    This tool departs from arbitrary scoring models and aligns with the **Comprehensive Capital Analysis and Review (CCAR)** methodology used by the US Federal Reserve. 
-    Every percentage point of risk generated by the model can be traced back to a specific dollar amount lost on the balance sheet.
+    While the Federal Reserve's CCAR is robust for US banks, the **Basel III framework (BIS)** is the global gold standard for MNC banking valuations. 
     
-    #### Core Mathematical Engine
-    The probability of valuation collapse is structurally tied to how close the Stressed CET1 gets to the regulatory "Death Zone" (typically 4.5% + G-SIB surcharges).
+    #### The Basel III Capital Stack
+    Under Basel III, a bank’s valuation is most sensitive to the **Total CET1 Requirement**, which consists of:
+    1.  **Minimum Tier 1 Capital:** 4.5% (Non-negotiable floor).
+    2.  **Capital Conservation Buffer (CCB):** 2.5% (Designed to absorb losses during stress).
+    3.  **G-SIB Surcharge:** ~2.0% (Extra capital required for systemic global banks).
     
-    **1. Kinetic-to-Macro Translation**
-    The engine converts the sliders into financial realities:
-    * `Oil Price = Base + (Severity * 10) * (1 + 0.4 * Duration)`
-    * `Yield Shock = (Severity * 15) + (Duration_Years * 50)`
+    **Total Global Safety Target: 9.0% CET1 Ratio.**
     
-    **2. Balance Sheet Depletion Math**
-    * **Market Loss ($B)** = `Bond Portfolio Size * Modified Duration * (Yield Shock / 10000)`
-    * **Stressed Probability of Default (PD)** = `Base PD * [1 + (Oil Shock Premium) + (Yield Shock Premium)] * (1 + Duration_Years)`
-    * **Credit Loss ($B)** = `Loan Book Size * Stressed PD * Loss Given Default (LGD)`
-    
-    **3. The Capital Floor**
-    * **Stressed CET1 %** = `[(Starting Capital - Total Depletion) / Risk-Weighted Assets] * 100`
+    #### Calculation Logic
+    * **RWA Scaling:** The model automatically scales Risk-Weighted Assets to the starting capital base to maintain a 12.5% baseline ratio, mirroring a healthy G-SIB.
+    * **Erosion:** Losses are subtracted from the capital numerator. When the ratio drops below 9.0%, the bank enters the 'Buffer Breach' zone, where dividend payments and executive bonuses are legally restricted, often leading to a collapse in equity valuation.
     """)
 
 # ==========================================
 # TAB 4: CLIENT USE CASES
 # ==========================================
 with tab4:
-    st.subheader("Banking Client Advisory: Strategic Questions")
+    st.subheader("Client Advisory Questions")
     st.markdown("""
-    This dynamic tool is designed to help bank executives, risk committees, and investment managers war-game severe geopolitical scenarios.
+    Use these prompts to guide a client session using the dashboard:
     
-    **Test the model by adjusting the sidebar sliders to answer the following client questions:**
+    > **"If we reduce our starting capital base through a share buyback program, how does our resilience to a 12-month Middle East conflict change?"**
+    > * **Action:** Reduce the 'Starting Capital' slider and compare the 'Breach Prob.' to the previous level.
     
-    > **Scenario A: The "Short & Sharp" Shock**
-    > * **Question:** "If a severe regional war breaks out (Severity = 9) but is contained and resolved within 3 months, where is our primary vulnerability?"
-    > * **How to model:** Set Severity to 9, Duration to 3.
-    > * **Insight:** The dashboard will reveal that **Market Risk** (bond portfolio losses due to immediate rate spikes) is the primary threat, while Credit Risk remains relatively subdued because corporations can survive a 3-month margin squeeze.
+    > **"Does a high-intensity 3-month skirmish threaten our Basel III buffers more than a low-intensity 3-year proxy war?"**
+    > * **Action:** Compare (Severity 9, Duration 3) vs. (Severity 4, Duration 36).
     
-    > **Scenario B: The Entrenched Proxy War**
-    > * **Question:** "If a moderate conflict (Severity = 5) drags on for 3 years, disrupting global shipping and energy markets, will our CET1 capital buffer hold?"
-    > * **How to model:** Set Severity to 5, Duration to 36.
-    > * **Insight:** The dashboard will show a massive shift. The extended duration forces a prolonged "higher for longer" rate environment and entrenched inflation. You will see **Credit Risk** explode, wiping out tens of billions in capital as borrower defaults compound over time.
-    
-    > **Scenario C: Regulatory Breach**
-    > * **Question:** "At what exact combination of conflict severity and duration does our bank breach the 4.5% regulatory minimum, triggering a potential receivership event?"
-    > * **How to model:** Slide both metrics up until the "Prob. of Regulatory Breach" hits 99%. 
-    > * **Insight:** Helps the risk committee define the absolute limits of their capital adequacy and informs hedging strategies.
+    > **"At what oil price peak does our loan book credit loss exceed our bond portfolio market loss?"**
+    > * **Action:** Increase severity and observe the waterfall chart until the 'Credit Risk' bar becomes larger than 'Market Risk'.
     """)
